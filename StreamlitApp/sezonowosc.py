@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 st.set_page_config(page_title="Sezonowość akcji", layout="wide")
 st.title("Sezonowość: luty vs styczeń (ostatnie 5 lat)")
 
-# Ograniczona lista dużych, pewnych tickerów (działają w Yahoo)
+# Lista dużych, sprawdzonych tickerów
 TICKERS = [
     "AAPL","MSFT","AMZN","GOOGL","META","NVDA","TSLA",
     "JPM","JNJ","V","PG","UNH","HD","MA","DIS","BAC",
@@ -26,11 +26,12 @@ if st.button("Uruchom analizę"):
                 start="2019-01-01",
                 end="2024-03-01",
                 interval="1d",
-                auto_adjust=True,   # 🔑 kluczowe – NIE używamy Adj Close
+                auto_adjust=True,
                 progress=False
             )
 
             if data.empty or "Close" not in data.columns:
+                st.warning(f"Brak danych dla {ticker}")
                 continue
 
             yearly_gains = []
@@ -39,23 +40,23 @@ if st.button("Uruchom analizę"):
                 jan = data[(data.index.year == year) & (data.index.month == 1)]
                 feb = data[(data.index.year == year) & (data.index.month == 2)]
 
-                if jan.empty or feb.empty:
+                # 🔹 BEZ używania 'or' na Series
+                if jan.shape[0] == 0 or feb.shape[0] == 0:
                     continue
 
                 jan_price = jan["Close"].iloc[0]     # pierwsza sesja stycznia
                 feb_price = feb["Close"].iloc[-1]    # ostatnia sesja lutego
 
-                if jan_price > 0:
-                    gain = (feb_price - jan_price) / jan_price * 100
-                    yearly_gains.append(gain)
+                gain = (feb_price - jan_price) / jan_price * 100
+                yearly_gains.append(gain)
 
-            if len(yearly_gains) >= 3:  # minimum sensownych obserwacji
+            if len(yearly_gains) >= 1:
                 results.append({
                     "Spółka": ticker,
                     "Średni wzrost (%)": round(np.mean(yearly_gains), 2),
                     "Mediana (%)": round(np.median(yearly_gains), 2),
-                    "Min (%)": round(min(yearly_gains), 2),
-                    "Max (%)": round(max(yearly_gains), 2),
+                    "Min (%)": round(np.min(yearly_gains), 2),
+                    "Max (%)": round(np.max(yearly_gains), 2),
                     "Liczba lat": len(yearly_gains)
                 })
 
@@ -75,7 +76,7 @@ if st.button("Uruchom analizę"):
     top10 = df.head(10)
 
     fig, ax = plt.subplots(figsize=(10,5))
-    ax.bar(top10["Spółka"], top10["Średni wzrost (%)"])
+    ax.bar(top10["Spółka"], top10["Średni wzrost (%)"], color="skyblue")
     ax.set_ylabel("Średni wzrost (%)")
     ax.set_xlabel("Spółka")
     ax.set_title("Sezonowość: luty vs styczeń")
