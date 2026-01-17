@@ -2,149 +2,81 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
-from datetime import datetime
 import matplotlib.pyplot as plt
 
 st.set_page_config(page_title="Sezonowość akcji", layout="wide")
+st.title("Sezonowość akcji – analiza lutego vs stycznia")
 
-st.title("📈 Analiza sezonowości akcji (klik i działa)")
-
-st.markdown("""
-Ta aplikacja szuka **powtarzalnych wzorców sezonowych** w cenach akcji  
-(np. styczeń → luty, listopad → grudzień).
-""")
-
-# =========================
-# PANEL STEROWANIA
-# =========================
-
-st.sidebar.header("⚙️ Ustawienia analizy")
-
-years = st.sidebar.slider("Liczba lat analizy", 3, 10, 5)
-
-period_name = st.sidebar.selectbox(
-    "Okres sezonowy",
-    {
-        "Styczeń → Luty": (1, 15, 2, 28),
-        "Listopad → Grudzień": (11, 1, 12, 31),
-        "Marzec → Maj": (3, 1, 5, 31)
-    }.keys()
-)
-
-periods = {
-    "Styczeń → Luty": (1, 15, 2, 28),
-    "Listopad → Grudzień": (11, 1, 12, 31),
-    "Marzec → Maj": (3, 1, 5, 31)
-}
-
-sector_filter = st.sidebar.selectbox(
-    "Sektor",
-    ["Wszystkie", "Consumer Cyclical", "Energy", "Healthcare", "Technology", "Financial Services"]
-)
-
-# =========================
-# DANE
-# =========================
-
-@st.cache_data
-def load_data(tickers, years):
-    data = {}
-    for t in tickers:
-        df = yf.download(t, period=f"{years+1}y", progress=False)
-        if not df.empty:
-            data[t] = df
-    return data
-
-@st.cache_data
-def get_sector(ticker):
-    try:
-        return yf.Ticker(ticker).info.get("sector")
-    except:
-        return None
-
+# ---- Lista przykładowych 100 spółek NYSE ----
+# W realnym zastosowaniu można pobrać listę dynamicznie
 tickers = [
-    "WMT","TGT","COST","HD","LOW",
-    "XOM","CVX","JNJ","PFE","ABBV",
-    "AAPL","MSFT","NVDA","GOOGL",
-    "JPM","BAC","GS","V","MA"
+    "AAPL","MSFT","GOOG","AMZN","TSLA","NVDA","JPM","JNJ","V","PG",
+    "UNH","HD","MA","DIS","BAC","PFE","ADBE","KO","NFLX","XOM",
+    "CSCO","INTC","PEP","MRK","CVX","T","ABT","ORCL","NKE","MCD",
+    "CRM","WMT","VZ","ACN","LLY","BMY","MDT","COST","IBM","QCOM",
+    "TXN","HON","LIN","NEE","PM","UPS","LOW","MMM","SBUX","AMD",
+    "GE","CAT","BLK","AXP","GS","RTX","AMGN","NOW","INTU","PLD",
+    "AMAT","BKNG","ADI","FIS","ISRG","SPGI","SYK","CL","ZTS","REGN",
+    "MO","CCI","DE","CSX","TMO","LMT","ANTM","MS","SCHW","BDX",
+    "USB","SCHW","EL","ADP","C","APD","ICE","EW","PNC","DUK",
+    "SO","VRTX","CTSH","ITW","TFC","COF","CSGP","MCK","ATVI","MAR"
 ]
 
-price_data = load_data(tickers, years)
+if st.button("Uruchom analizę"):
+    results = []
 
-# =========================
-# ANALIZA
-# =========================
-
-def closest_price(df, date):
-    return df.iloc[(df.index - date).abs().argsort()[:1]]["Close"].values[0]
-
-results = []
-
-if st.button("▶ Uruchom analizę"):
-    m1, d1, m2, d2 = periods[period_name]
-
-    for t in tickers:
-        df = price_data.get(t)
-        if df is None:
-            continue
-
-        sector = get_sector(t)
-        if sector_filter != "Wszystkie" and sector != sector_filter:
-            continue
-
-        returns = []
-
-        for y in range(datetime.now().year - years, datetime.now().year):
-            try:
-                p1 = closest_price(df, datetime(y, m1, d1))
-                p2 = closest_price(df, datetime(y, m2, d2))
-                returns.append((p2 - p1) / p1)
-            except:
-                pass
-
-        if returns:
-            results.append({
-                "Spółka": t,
-                "Sektor": sector,
-                "Średni wzrost (%)": round(np.mean(returns)*100, 2),
-                "Lata na plusie": sum(r > 0 for r in returns)
-            })
-
-    df_res = pd.DataFrame(results).sort_values("Średni wzrost (%)", ascending=False)
-
-    st.subheader("📊 Wyniki")
-    st.dataframe(df_res, use_container_width=True)
-
-    st.download_button(
-        "⬇ Pobierz wyniki (CSV)",
-        df_res.to_csv(index=False),
-        "sezonowosc_wyniki.csv"
-    )
-
-    # =========================
-    # WYKRES
-    # =========================
-
-    st.subheader("📈 Wykres sezonowy")
-
-    selected = st.selectbox("Wybierz spółkę do wykresu", df_res["Spółka"])
-
-    df = price_data[selected]
-    paths = []
-
-    for y in range(datetime.now().year - years, datetime.now().year):
+    for ticker in tickers:
         try:
-            start = datetime(y, m1, d1)
-            end = datetime(y, m2, d2)
-            segment = df.loc[start:end]["Close"].pct_change().cumsum()
-            paths.append(segment.values)
-        except:
-            pass
+            data = yf.download(ticker, period="5y", interval="1mo", progress=False)
+            if data.empty:
+                st.warning(f"Brak danych dla {ticker}")
+                continue
 
-    if paths:
-        avg = np.nanmean(np.array(paths), axis=0)
-        fig, ax = plt.subplots()
-        ax.plot(avg)
-        ax.set_title(f"{selected} – średnia ścieżka sezonowa")
-        ax.set_ylabel("Zmiana %")
-        st.pyplot(fig)
+            yearly_gains = []
+            min_gains = []
+            max_gains = []
+
+            for year in range(2019, 2024):
+                jan_date = f"{year}-01-15"
+                feb_date = f"{year}-02-28"
+                try:
+                    jan_price = data.loc[data.index >= jan_date]["Adj Close"].iloc[0]
+                    feb_price = data.loc[data.index >= feb_date]["Adj Close"].iloc[0]
+                    gain = ((feb_price - jan_price) / jan_price) * 100
+                    yearly_gains.append(gain)
+                except IndexError:
+                    continue
+
+            if yearly_gains:
+                results.append({
+                    "Spółka": ticker,
+                    "Średni wzrost (%)": np.mean(yearly_gains),
+                    "Min wzrost (%)": np.min(yearly_gains),
+                    "Max wzrost (%)": np.max(yearly_gains)
+                })
+            else:
+                st.info(f"Brak pełnych danych dla {ticker}")
+
+        except Exception as e:
+            st.error(f"Błąd przy pobieraniu danych dla {ticker}: {e}")
+
+    if results:
+        df_res = pd.DataFrame(results)
+        if "Średni wzrost (%)" in df_res.columns:
+            df_res = df_res.sort_values("Średni wzrost (%)", ascending=False)
+            st.subheader("Wyniki analizy")
+            st.dataframe(df_res)
+
+            # ---- Wykres słupkowy ----
+            st.subheader("Top 20 spółek wg średniego wzrostu (%)")
+            top20 = df_res.head(20)
+            fig, ax = plt.subplots(figsize=(12,6))
+            ax.bar(top20["Spółka"], top20["Średni wzrost (%)"], color="skyblue")
+            ax.set_ylabel("Średni wzrost (%)")
+            ax.set_xlabel("Spółka")
+            ax.set_xticklabels(top20["Spółka"], rotation=45, ha="right")
+            st.pyplot(fig)
+        else:
+            st.error("Kolumna 'Średni wzrost (%)' nie istnieje. Analiza nie mogła zostać przeprowadzona.")
+    else:
+        st.warning("Brak danych do wyświetlenia. Sprawdź tickery lub połączenie z internetem.")
