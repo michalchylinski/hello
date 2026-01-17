@@ -5,21 +5,15 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 st.set_page_config(page_title="Sezonowość akcji", layout="wide")
-st.title("Sezonowość akcji – analiza lutego vs stycznia")
+st.title("Sezonowość akcji – analiza lutego vs stycznia (ostatnie 5 lat)")
 
-# ---- Lista przykładowych 100 spółek NYSE ----
-# W realnym zastosowaniu można pobrać listę dynamicznie
+# Lista przykładowych 50 spółek NYSE dla szybszego działania w Cloud
 tickers = [
     "AAPL","MSFT","GOOG","AMZN","TSLA","NVDA","JPM","JNJ","V","PG",
     "UNH","HD","MA","DIS","BAC","PFE","ADBE","KO","NFLX","XOM",
     "CSCO","INTC","PEP","MRK","CVX","T","ABT","ORCL","NKE","MCD",
     "CRM","WMT","VZ","ACN","LLY","BMY","MDT","COST","IBM","QCOM",
-    "TXN","HON","LIN","NEE","PM","UPS","LOW","MMM","SBUX","AMD",
-    "GE","CAT","BLK","AXP","GS","RTX","AMGN","NOW","INTU","PLD",
-    "AMAT","BKNG","ADI","FIS","ISRG","SPGI","SYK","CL","ZTS","REGN",
-    "MO","CCI","DE","CSX","TMO","LMT","ANTM","MS","SCHW","BDX",
-    "USB","SCHW","EL","ADP","C","APD","ICE","EW","PNC","DUK",
-    "SO","VRTX","CTSH","ITW","TFC","COF","CSGP","MCK","ATVI","MAR"
+    "TXN","HON","LIN","NEE","PM","UPS","LOW","MMM","SBUX","AMD"
 ]
 
 if st.button("Uruchom analizę"):
@@ -27,24 +21,28 @@ if st.button("Uruchom analizę"):
 
     for ticker in tickers:
         try:
-            data = yf.download(ticker, period="5y", interval="1mo", progress=False)
+            # Pobranie dziennych danych z ostatnich 5 lat
+            data = yf.download(ticker, start="2019-01-01", end="2024-01-31", interval="1d", progress=False)
             if data.empty:
                 st.warning(f"Brak danych dla {ticker}")
                 continue
 
             yearly_gains = []
-            min_gains = []
-            max_gains = []
 
             for year in range(2019, 2024):
-                jan_date = f"{year}-01-15"
-                feb_date = f"{year}-02-28"
                 try:
-                    jan_price = data.loc[data.index >= jan_date]["Adj Close"].iloc[0]
-                    feb_price = data.loc[data.index >= feb_date]["Adj Close"].iloc[0]
+                    jan_data = data[(data.index.year == year) & (data.index.month == 1)]
+                    feb_data = data[(data.index.year == year) & (data.index.month == 2)]
+
+                    if jan_data.empty or feb_data.empty:
+                        continue
+
+                    jan_price = jan_data.loc[jan_data.index >= pd.Timestamp(f"{year}-01-15")]["Adj Close"].iloc[0]
+                    feb_price = feb_data.loc[feb_data.index <= pd.Timestamp(f"{year}-02-28")]["Adj Close"].iloc[-1]
+
                     gain = ((feb_price - jan_price) / jan_price) * 100
                     yearly_gains.append(gain)
-                except IndexError:
+                except Exception:
                     continue
 
             if yearly_gains:
@@ -62,21 +60,19 @@ if st.button("Uruchom analizę"):
 
     if results:
         df_res = pd.DataFrame(results)
-        if "Średni wzrost (%)" in df_res.columns:
-            df_res = df_res.sort_values("Średni wzrost (%)", ascending=False)
-            st.subheader("Wyniki analizy")
-            st.dataframe(df_res)
+        df_res = df_res.sort_values("Średni wzrost (%)", ascending=False)
+        st.subheader("Wyniki analizy")
+        st.dataframe(df_res)
 
-            # ---- Wykres słupkowy ----
-            st.subheader("Top 20 spółek wg średniego wzrostu (%)")
-            top20 = df_res.head(20)
-            fig, ax = plt.subplots(figsize=(12,6))
-            ax.bar(top20["Spółka"], top20["Średni wzrost (%)"], color="skyblue")
-            ax.set_ylabel("Średni wzrost (%)")
-            ax.set_xlabel("Spółka")
-            ax.set_xticklabels(top20["Spółka"], rotation=45, ha="right")
-            st.pyplot(fig)
-        else:
-            st.error("Kolumna 'Średni wzrost (%)' nie istnieje. Analiza nie mogła zostać przeprowadzona.")
+        # Wykres Top 20
+        st.subheader("Top 20 spółek wg średniego wzrostu (%)")
+        top20 = df_res.head(20)
+        fig, ax = plt.subplots(figsize=(12,6))
+        ax.bar(top20["Spółka"], top20["Średni wzrost (%)"], color="skyblue")
+        ax.set_ylabel("Średni wzrost (%)")
+        ax.set_xlabel("Spółka")
+        ax.set_xticklabels(top20["Spółka"], rotation=45, ha="right")
+        st.pyplot(fig)
+
     else:
         st.warning("Brak danych do wyświetlenia. Sprawdź tickery lub połączenie z internetem.")
