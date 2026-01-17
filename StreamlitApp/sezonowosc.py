@@ -5,74 +5,79 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 st.set_page_config(page_title="Sezonowość akcji", layout="wide")
-st.title("Sezonowość akcji – analiza lutego vs stycznia (ostatnie 5 lat)")
+st.title("Sezonowość: luty vs styczeń (ostatnie 5 lat)")
 
-# Lista przykładowych 50 spółek NYSE dla szybszego działania w Cloud
-tickers = [
-    "AAPL","MSFT","GOOG","AMZN","TSLA","NVDA","JPM","JNJ","V","PG",
-    "UNH","HD","MA","DIS","BAC","PFE","ADBE","KO","NFLX","XOM",
-    "CSCO","INTC","PEP","MRK","CVX","T","ABT","ORCL","NKE","MCD",
-    "CRM","WMT","VZ","ACN","LLY","BMY","MDT","COST","IBM","QCOM",
-    "TXN","HON","LIN","NEE","PM","UPS","LOW","MMM","SBUX","AMD"
+# Ograniczona lista dużych, pewnych tickerów (działają w Yahoo)
+TICKERS = [
+    "AAPL","MSFT","AMZN","GOOGL","META","NVDA","TSLA",
+    "JPM","JNJ","V","PG","UNH","HD","MA","DIS","BAC",
+    "XOM","CVX","KO","PEP","WMT","COST","MCD","NKE","SBUX"
 ]
+
+YEARS = [2019, 2020, 2021, 2022, 2023]
 
 if st.button("Uruchom analizę"):
     results = []
 
-    for ticker in tickers:
+    for ticker in TICKERS:
         try:
-            # Pobranie dziennych danych z ostatnich 5 lat
-            data = yf.download(ticker, start="2019-01-01", end="2024-01-31", interval="1d", progress=False)
-            if data.empty:
-                st.warning(f"Brak danych dla {ticker}")
+            data = yf.download(
+                ticker,
+                start="2019-01-01",
+                end="2024-03-01",
+                interval="1d",
+                auto_adjust=True,   # 🔑 kluczowe – NIE używamy Adj Close
+                progress=False
+            )
+
+            if data.empty or "Close" not in data.columns:
                 continue
 
             yearly_gains = []
 
-            for year in range(2019, 2024):
-                try:
-                    jan_data = data[(data.index.year == year) & (data.index.month == 1)]
-                    feb_data = data[(data.index.year == year) & (data.index.month == 2)]
+            for year in YEARS:
+                jan = data[(data.index.year == year) & (data.index.month == 1)]
+                feb = data[(data.index.year == year) & (data.index.month == 2)]
 
-                    if jan_data.empty or feb_data.empty:
-                        continue
-
-                    jan_price = jan_data.loc[jan_data.index >= pd.Timestamp(f"{year}-01-15")]["Adj Close"].iloc[0]
-                    feb_price = feb_data.loc[feb_data.index <= pd.Timestamp(f"{year}-02-28")]["Adj Close"].iloc[-1]
-
-                    gain = ((feb_price - jan_price) / jan_price) * 100
-                    yearly_gains.append(gain)
-                except Exception:
+                if jan.empty or feb.empty:
                     continue
 
-            if yearly_gains:
+                jan_price = jan["Close"].iloc[0]     # pierwsza sesja stycznia
+                feb_price = feb["Close"].iloc[-1]    # ostatnia sesja lutego
+
+                if jan_price > 0:
+                    gain = (feb_price - jan_price) / jan_price * 100
+                    yearly_gains.append(gain)
+
+            if len(yearly_gains) >= 3:  # minimum sensownych obserwacji
                 results.append({
                     "Spółka": ticker,
-                    "Średni wzrost (%)": np.mean(yearly_gains),
-                    "Min wzrost (%)": np.min(yearly_gains),
-                    "Max wzrost (%)": np.max(yearly_gains)
+                    "Średni wzrost (%)": round(np.mean(yearly_gains), 2),
+                    "Mediana (%)": round(np.median(yearly_gains), 2),
+                    "Min (%)": round(min(yearly_gains), 2),
+                    "Max (%)": round(max(yearly_gains), 2),
+                    "Liczba lat": len(yearly_gains)
                 })
-            else:
-                st.info(f"Brak pełnych danych dla {ticker}")
 
         except Exception as e:
-            st.error(f"Błąd przy pobieraniu danych dla {ticker}: {e}")
+            st.warning(f"Błąd dla {ticker}: {e}")
 
-    if results:
-        df_res = pd.DataFrame(results)
-        df_res = df_res.sort_values("Średni wzrost (%)", ascending=False)
-        st.subheader("Wyniki analizy")
-        st.dataframe(df_res)
+    if not results:
+        st.error("❌ Brak wyników – to NIE powinno się zdarzyć.")
+        st.stop()
 
-        # Wykres Top 20
-        st.subheader("Top 20 spółek wg średniego wzrostu (%)")
-        top20 = df_res.head(20)
-        fig, ax = plt.subplots(figsize=(12,6))
-        ax.bar(top20["Spółka"], top20["Średni wzrost (%)"], color="skyblue")
-        ax.set_ylabel("Średni wzrost (%)")
-        ax.set_xlabel("Spółka")
-        ax.set_xticklabels(top20["Spółka"], rotation=45, ha="right")
-        st.pyplot(fig)
+    df = pd.DataFrame(results).sort_values("Średni wzrost (%)", ascending=False)
 
-    else:
-        st.warning("Brak danych do wyświetlenia. Sprawdź tickery lub połączenie z internetem.")
+    st.subheader("📊 Wyniki")
+    st.dataframe(df, use_container_width=True)
+
+    st.subheader("🏆 Top 10 – średni wzrost luty vs styczeń")
+    top10 = df.head(10)
+
+    fig, ax = plt.subplots(figsize=(10,5))
+    ax.bar(top10["Spółka"], top10["Średni wzrost (%)"])
+    ax.set_ylabel("Średni wzrost (%)")
+    ax.set_xlabel("Spółka")
+    ax.set_title("Sezonowość: luty vs styczeń")
+    plt.xticks(rotation=45)
+    st.pyplot(fig)
